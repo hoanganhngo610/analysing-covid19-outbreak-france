@@ -85,7 +85,7 @@ As there are certain days where data for different regions came from different s
 
 ## Data updates {-}
 
-As mentioned above, from `2020-03-10` onwards, data on the infected cases will be updated at the end of each day by the National Public Health Agency. With that being said, the dataset will also be updated with the same pace. Besides, 
+As mentioned above, from `2020-03-10` onwards, data on the infected cases will be updated at the end of each day by the National Public Health Agency. With that being said, the dataset will also be updated with the same pace.
 
 ## Visualisation {-}
 
@@ -773,7 +773,7 @@ plot_R_region(PACA, PACA_start_date)
 
 ## Conclusion {-}
 
-With all the analysis that we have done previously, it seems clearly that France has been doing anything it can to make this pandemic under control. 
+With all the analysis that we have done previously, it seems that under strong movements by the French government, the country is following a correct pathway in the progress of putting this pandemic under control. 
 
 Most specialists in the field believe that France is the second version of Italy in this pandemic, with the delay of 7-9 days. However, personally speaking, I do not believe that the same outcome will happen to France. With early, strong and strict measures, along with a world class medical system, France will have their own way in controlling this outbreak as fast and as effective as possible. 
 
