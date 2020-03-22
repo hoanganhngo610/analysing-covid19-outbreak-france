@@ -1,0 +1,780 @@
+---
+title: "Analysing COVID-19 (SARS-CoV-2) outbreak in France (Part 1)"
+draft: false
+description: "An exploration of COVID-19 incidence data in France using R tools and packages"
+categories:
+  - R
+  - "COVID-19"
+author:
+  - name: Hoang Anh NGO 
+    affiliation: Bachelor of Science in Mathematics and Economics, École Polytechnique, Institut Polytechnique de Paris, FRANCE
+    affiliation_url: https://www.polytechnique.edu
+creative_commons: CC BY-SA
+date: "2020-03-22"
+base_url: 
+slug: ngo2020covid19rfrance
+twitter:
+  creator: "@HoangAnhNgo6"
+output:
+  html_document:
+    number_sections: yes
+    theme: sandstone
+    toc: yes
+    toc_depth: 4
+repository_url: https://github.com/hoanganhngo610/analysing-covid19-outbreak-france/tree/master/Analysing%20COVID-19%20(SARS-CoV-2)%20outbreak%20in%20France%20(Part%201)
+bibliography: COVID19_France_P1.bib
+nocite: '@*'
+---
+
+```{r setup, include = FALSE}
+version <- "1.0"
+version_date <- Sys.Date()
+knitr::opts_chunk$set(echo = FALSE, cache=TRUE, message = FALSE,
+                      tidy.opts=list(width.cutoff=60),
+                      tidy=TRUE, warning = FALSE)
+library(tidyverse)
+library(magrittr)
+library(lubridate)
+library(tibble)
+library(ggplot2)
+library(ggthemes)
+library(hrbrthemes)
+library(rvest)
+library(gt)
+library(deSolve)
+library(EpiEstim)
+library(incidence)
+library(distcrete)
+library(epitrix)
+library(projections)
+```
+
+
+## Pre-amble {-}
+
+At the time this notebook is published, COVID-19 has become an international oandemic. Although the situation has been greatly improved in China, the initial source of this disease, Europe has become the new epidemic point. With the old population and a rapid speed of transmission, Europe has now become the newcenter of this pandemic, with a lot of countries reporting more than 1000 cases per day. Particularly, in Italy, the number of deceased cases has exceeded that of China, leading to the mortality rate of this country being 3-4 times higher than the average of the remaining part of the world.
+
+Along with Italy, France, Spain and Germany are countries with which suffer the most from the pandemic. Take France as an example. After a long time without any strong measures, France had to go through and establish many aggressive steps, including:
+
+  1. March 12th, 2020: French president Emmanuel Macron first appeard in front of public. In his speech, ordered educational shutdown of all levels; however, local elections will still be happening. Macron also warns that at the time, France is still at the beginning of this pandemic.
+  2. March 14th, 2020: French Prime Minister Édouard Philippe annouced that all nonessential businesses, including cafes, would be shut at midnight until further notice. Social distancing is now the unofficial law of the land.
+  3. March 16th, 2020: Once again, President Macron appeared in front of public to annouce the 15-day lockdown at the national level in the "war" against coronavirus. This means that:
+  
+      - Movement are extremely restricted, and people are required to stay at home unless they need to buy groceries, go to work, exercise or seek for medical assistance
+      - 100.000 officers are deployed for this lockdown, and anyone found outside will have to provide a written proof of reasons for travelling 
+      - Rents, gas, water and electricity bills will be suspended
+      - Moreover, French border with EU countries will be shut down for 30 days, while still allowing French nationals to return home
+      - A 300-billion euro package were also annouced to help struggling businesses
+
+With all that being said, getting to understand, analyse and predict the situation, at this moment, is extremely crucial.
+  
+Currently, `R` is one of the tools of choice for outbreak epidemiologists, with a huge range of libraries on `CRAN` and `GitHub` devoted to outbreak management and analysis. This post is considered as a brief introduction to a few of the excellent packages available in the _R Epidemics Consortium (RECON)_ suite, as well as the use of base `R` and `tidyverse` packages for data wrangling and visualization. 
+
+The main idea and flow of this notebook is based on the work done previously by Professor Tim Churches, Senior Research Fellow at the UNSW Medicine South Western Sydney Clinical School at Liverpool Hospital, and a health data scientist at the Ingham Institute for Applied Medical Research, also located at Liverpool, Sydney. The author wants to send the most sincere thank to Prof. Tim Churches for his wonderful ideas and support upon conducting the analyses.
+
+## Data acquisition {-}
+
+Between `2020-03-04` and `2020-03-07` and from `2020-03-10` onwards, the total number of infected cases by region and the total number of deceased cases nationally are provided by the French National Public Health Agency (Agence National de santé publique) on the website \url{www.santepubliquefrance.fr}. For the remaining part of the dataset, the numbers are taken from the following sources:
+
+  * Regional Health Agency (Agence régionale de santé, ARS) press releases
+  * 2020 coronavirus pandemic in France, Wikipedia, The Free Encyclopedia (\url{https://en.wikipedia.org/wiki/2020_coronavirus_pandemic_in_France})
+  * Pandémie de maladie à coronavirus de 2020 en France, Wikipédia, l'éncyclopédie libre (\url{https://fr.wikipedia.org/wiki/Pand%C3%A9mie_de_maladie_%C3%A0_coronavirus_de_2020_en_France}) 
+  * and various other online newspaper resources, including _Le Figaro_, _Le Parisien_, _Les Echos_, _Ouest France_, _FranceInfo_, etc.
+  
+As there are certain days where data for different regions came from different sources, the deviance of the collected data from the number annouced by the French Ministry of Health is inevitable. We will briefly investigate that difference in the following parts.
+
+## Data updates {-}
+
+As mentioned above, from `2020-03-10` onwards, data on the infected cases will be updated at the end of each day by the National Public Health Agency. With that being said, the dataset will also be updated with the same pace. Besides, 
+
+## Visualisation {-}
+
+First of all, we will load this dataset and visualize the number of incident infected cases and death cases everyday, at the national level.
+
+```{r load_dataset, echo=FALSE, tidy=TRUE, message=FALSE, warning=FALSE}
+covid19_france_regions <- read.csv('./COVID-19 total cases by region - France.csv', skip = 1, check.names = FALSE,
+                                   header = TRUE, sep = ';', fileEncoding = "UTF-8", na.strings = c("N/A",""))
+colnames(covid19_france_regions)[1] <- "Date"
+colnames(covid19_france_regions)[22:25] <- c("New infected cases", "Total cases", "New deaths", "Total deaths")
+```
+
+```{r show_date, echo=FALSE, tidy=TRUE, message=FALSE, warning=FALSE}
+current_date <- Sys.Date()
+print(paste('The current date is:', current_date))
+last_date <- max(cases_by_region[['Date']])
+print(paste('The last date registered in the dataset is:',last_date))
+```
+
+```{r create_cases_by_region, message = FALSE, echo=FALSE, tidy=TRUE, warning=FALSE}
+cases_by_region <- covid19_france_regions %>%
+  mutate(Date=dmy(Date)) %>%
+  filter(!is.na(Date)) %>%
+  select(-c("New infected cases","Total cases","New deaths", "Total deaths", "Official data", "Difference (%)")) %>%
+  pivot_longer(-Date,
+              names_to = "Region",
+              values_to = "Incident cases") %>%
+  group_by(Date, Region) %>%
+  summarise(`Incident cases` = sum(`Incident cases`, na.rm=TRUE)) %>%
+  arrange(Region, Date) %>%
+  group_by(Region) %>%
+  mutate(`Cumulative cases` = cumsum(`Incident cases`))
+```
+
+```{r plot_incident_cases, message = FALSE, echo=FALSE, tidy=TRUE, warning=FALSE}
+cases_by_region %>%
+  group_by(Date) %>%
+  summarise(`Incident cases` = sum(`Incident cases`, na.rm=TRUE)) %>%
+  filter(Date <= current_date) %>%
+  ggplot(aes(x=Date, y=`Incident cases`)) +
+  geom_bar(stat="identity") +
+  labs(y="Number of Incident cases", 
+       title="COVID-19 incident cases (by day) in France") +
+  theme(legend.position="top")
+```
+
+```{r plot_incident_deaths, message = FALSE, echo=FALSE, tidy=TRUE, warning=FALSE}
+incident_deaths <- covid19_france_regions %>%
+  mutate(Date=dmy(Date)) %>%
+  filter(!is.na(`New deaths`)) %>%
+  select(c("Date", "New deaths"))
+  
+incident_deaths %>%
+  ggplot(aes(x = Date, y = `New deaths`)) + 
+  geom_bar(stat = "identity") + 
+  labs(y = "Number of incident death cases",
+       title = "COVID-19 incident death cases (by day) in France") + 
+  theme(legend.position = "top")
+```
+
+Now, we will calculate the mortality rate this virus caused to the French population, and compare it with data from the rest of the world.
+
+```{r plot_mortality_rate, message = FALSE, echo=FALSE, tidy=TRUE, warning=FALSE}
+covid19_france_regions$`Mortality rate` <- covid19_france_regions$`Total deaths` / covid19_france_regions$`Total cases` * 100
+
+mortality_rate <- covid19_france_regions %>%
+  mutate(Date=dmy(Date)) %>%
+  filter(!is.na(`Mortality rate`)) %>%
+  select(c("Date", "Mortality rate"))
+
+mortality_rate %>%
+  ggplot(aes(x = Date, y = `Mortality rate`)) + 
+  geom_bar(stat = "identity") + 
+  labs(y = "Mortality rate (%)",
+       title = "Mortality rate by day cased by COVID-19 in France") + 
+  theme(legend.position = "top")
+
+View(mortality_rate)
+```
+
+On `2020-03-21`, the mortality rate registered in France caused by COVID-19 is at 3.887%. This is lower than both the overall mortality rate of the world (4.293%) and of China (4.0084%)
+
+Next, we will see the total number of cases by region.
+
+```{r cases_by_region, message = FALSE, echo=FALSE, tidy=TRUE}
+cases_by_region %>%
+  filter(Date <= current_date) %>%
+  group_by(Region) %>%
+  summarise(`Incident cases` = sum(`Incident cases`, na.rm=TRUE)) %>%
+  ungroup() %>%
+  ggplot(aes(x=reorder(Region, `Incident cases`), y=`Incident cases`)) +
+  geom_bar(stat="identity") +
+  coord_flip() +
+  labs(y = "Total cases",
+       title = paste("COVID-19 total cases in France by region  \n (until", current_date, ")")) +
+  theme(legend.position="top")
+```
+
+
+Next, as mentioned previously, there are days within the dataset when data is collected from various different sources. As a result, it can be different from what has been announced by the French Ministry of Health on respective days. Here, we will have a look at the difference between the total number of cases collected and the total number of cases declared by the Government, by day.
+
+```{r cases_difference, message = FALSE, echo=FALSE, tidy=TRUE}
+cases_difference <- covid19_france_regions %>%
+  mutate(Date=dmy(Date)) %>%
+  filter(!is.na(`Difference (%)`)) %>%
+  select(c("Date", "Difference (%)"))
+  
+cases_difference %>%
+  filter(!is.na(`Difference (%)`)) %>%
+  ggplot(aes(x = Date, y = `Difference (%)`)) + 
+  geom_bar(stat = "identity") + 
+  labs(y = "Difference (%)",
+       title = "Difference between collected and declared data by the French Government \n on total number of cases (by day)") + 
+  theme(legend.position = "top")
+```
+
+We can see that, the difference between the two data sources are always less than 10%, with only 3 among those days having the difference greater than 5%. As a result, this dataset is stable and reliable enough to conduct any analysis.
+
+## Analysis {-}
+
+The sections on Japan, South Korea, Italy and Iran use the [`earlyR`](https://www.repidemicsconsortium.org/earlyR/) and `EpiEstim` packages, also published by **RECON**. In particular, the function `estimate_R()` function in `earlyR` estimates the reproduction number of an epidemic, given the incidence time series and the serial interval dítribution; while the `overall_infectivity()` function in the EpiEstim package calculates $\lambda$ (lambda), which is a relative measure of the current “force of infection” or infectivity of an outbreak:
+$$ \lambda = \sum_{s=1}^{t-1} {y_{s} w (t - s)} $$
+where $w()$ is the probability mass function (PMF) of the serial interval, and $y_s$ is the incidence at time $s$.
+
+The resulting $\lambda$ "force of infection" plot indicates the daily effective infectiousness (subject to public health controls), with a projection of the diminution of the force of infection if no further cases are observed. The last date of observed data is indicated by the vertical blue dashed line. New cases are shown in a cumulative manner as black dots. It is a sign that the outbreak is being brought under control if $\lambda$, as indicated by the orange bars, is falling prior to or at the date of last observation (as indicated by the vertical blue line). Note that left of the vertical blue line the $\lambda$ values are projections, valid only in **no further cases are observed**. As such, the plot is a bit confusing, but it is nonetheless useful if interpreted with this explanation in mind. The **RECON** packages are all open-source, and easier-to-interpret plots of $\lambda$ could readily be constructed.
+
+The critical parameter for these calculation is the distribution of _serial intervals_ (SI), which is the time between the date of onset of symptoms for a case and the dates of onsets for any secondary cases that case gives rise to. Typically a discrete $\gamma$ distribution for these _serial intervals_ is assumed, parameterised by a mean and standard deviation, although more complex distributions are probably more realistic. See the [previous post](https://timchurches.github.io/blog/posts/2020-02-18-analysing-covid-19-2019-ncov-outbreak-data-with-r-part-1/#estimating-changes-in-the-effective-reproduction-number) for more detailed discussion of the _serial interval_, and the paramount importance of line-listing data from which it can be empirically estimated.
+
+In this post, we will incorporate this uncertainty around the serial interval distribution by  specifying a distribution of SI distributions for the estimation of the instantaneous effective reproduction number  $R_{e}$. We'll retain the mean SI estimated by [Li _et al._]((https://www.nejm.org/doi/full/10.1056/NEJMoa2001316)) of 7.5 days, with an SD of 3.4, but let's also allow that mean SI to vary between 2.3 and 8.4 using a truncated normal distribution with an SD of 2.0. We'll also allow the SD of the SD to vary between 0.5 and 4.0.
+
+For the estimation of the force of infection $\lambda$, for the _serial interval_ we'll use a discrete $\gamma$ distribution with a mean of 5.0 days and a standard deviation of 3.4.
+
+----
+
+```{r initialize_params, message = FALSE, echo=FALSE, tidy=TRUE}
+si_mean <- 5.0
+si_sd <- 3.4
+alt_si_mean <- 7.5
+alt_si_sd <- 3.4
+
+discrete_si_distr <- discr_si(seq(0, 20), si_mean, si_sd)
+```
+
+
+```{r incid_data, message = FALSE, echo=FALSE, tidy=TRUE}
+France_incid_df <- cases_by_region %>%
+  ungroup() %>%
+  select(-c("Region","Cumulative cases")) %>%
+  aggregate(`Incident cases` ~ Date, ., sum)
+```
+
+```{r plot_lambda, message = FALSE, echo=FALSE, tidy=TRUE, warning=FALSE}
+lambdas <- France_incid_df %>%
+  rename(dates = Date,
+         I = "Incident cases") %>%
+  overall_infectivity(., si_distr = discrete_si_distr)
+
+France_incid_df <- France_incid_df %>%
+  mutate(lambda = lambdas)
+
+France_incid_df %>%
+  ggplot() +
+    geom_bar(aes(x = Date, y = `Incident cases`), stat="identity") +
+    geom_line(data=France_incid_df, aes(x = Date, y = lambda*4), colour="orange", size=1) +
+    labs(x="Date", y="Incident cases",
+         title="COVID-19 incident cases and lambda infectivity of France",
+         subtitle="Note: Lambda shown as orange line, whose scale is relative")
+```
+
+We can easily see that the $\lambda$ value is increasing extremely fast, with no point of stopping or slowing down. This is reflected clearly through the speed of increase in cases of France, especially in recent days.
+
+```{r incidence}
+case_dates <- France_incid_df %>%
+  uncount(`Incident cases`) %>%
+  pull(Date)
+
+cases_obj <- case_dates %>%
+  incidence(., last_date = last_date)
+```
+
+```{r, estimate_R_national, warning=FALSE}
+incident_cases_national <- cases_by_region %>%
+  group_by(Date) %>%
+  summarise(`Incident cases` = sum(`Incident cases`, na.rm=TRUE)) %>%
+  filter(Date >= ymd("2020-02-25")) %>% 
+  rename(dates = Date,
+           I = `Incident cases`)
+
+estimate_R_national <- estimate_R(incident_cases_national,
+                              method="uncertain_si",
+                              config = make_config(list(
+                                mean_si = 7.5, std_mean_si = 2.0,
+                                min_mean_si = 1, max_mean_si = 8.4,
+                                std_si = 3.4, std_std_si = 1.0,
+                                min_std_si = 0.5, max_std_si = 4.0,
+                                n1 = 1000, n2 = 1000)))
+  
+  plot(estimate_R_national, "R") + labs(title=paste("Instantaneous effective production number R - national level"))
+```
+
+First of all, to omit any misbehavior, we will once again start with the date when the whole nation believes to be the first date that this pandemic truly happens, 25 February, 2020.
+
+Taking a look at the object `estimate_R_national`, we can see that at the date this notebook is finish (`2020-03-21`), the mean reproduction number is at 2.54, with 95% Confidence Interval of 1.61 - 3.42. This means that, although the overall trend is decreasing, the reproduction number value is still high enough to consider the situation at this country as serious.
+
+## Fitting a log-linear model to predict the epidemic curve {-}
+
+To fit a log-linear regression under the form of 
+$$
+\log(y) = ax + b,
+$$
+the **RECON** _incidence_ package can be used. Usually, two models will be implemented, one for the growth phase and one for the decay phase, awpEtws by a peak. For example, this can be applied for the current situation in Wuhan (or China, in general), where the disease has come to the decay phase. 
+
+However, as we acknowledge that France is still in the growth phase with the peak estimated to arrive in at least two weeks, we will only fit one curve for the growth phase. 
+
+**Note**: During the time this analysis is conducted, the function `plot()` used to visualize the incident object is misbehaving. As a result, instead of representing the incidence object and fit object on the same graph, only the fit object is displayed.
+
+```{r, warning=FALSE}
+France_incidence_fit <- incidence::fit(cases_obj, split = NULL)
+
+plot(France_incidence_fit)
+```
+
+We can easily see that our model above is not actually an excellent fit, because we are including the handful of very early cases that did not appear to establish sustained chains of local transmission. We can also obseerve that France does not register any new cases for a long enough period of time, which triggers our modelb. We will exclude those days, and start again with the day when the French government considered to be the beginning of the pandemic within the country, 25 February, 2020.
+
+```{r fit_trimmed_incidence}
+trimmed_case_dates <- France_incid_df %>%
+  filter(Date >= ymd("2020-02-25")) %>%
+  uncount(`Incident cases`) %>%
+  pull(Date)
+
+trimmed_cases_obj <- trimmed_case_dates %>%
+  incidence(., last_date = last_date)
+
+trimmed_France_incidence_fit <- incidence::fit(trimmed_cases_obj, split = NULL)
+
+plot(trimmed_France_incidence_fit)
+```
+
+We can verify and compare the efficiency of the models through the fit statistics, including R-squared, adjusted R-squared and deviance as follows:
+
+```{r compare_model}
+decay_model_fit_stats <- glance(France_incidence_fit$model) %>%
+                          mutate(Dates="From 2020-01-24") %>%
+                          bind_rows(glance(trimmed_France_incidence_fit$model) %>%
+                                      mutate(Dates="From 2020-02-25")) %>%
+                          select(Dates, r.squared, adj.r.squared, deviance)
+decay_model_fit_stats %>% 
+  gt(rowname_col = "Date") %>%
+    fmt_number(columns=2:4, decimals = 2) %>%
+    cols_label(
+    r.squared = html("R<sup>2</sup>"),
+    adj.r.squared = html("Adjusted R<sup>2</sup>"),
+    deviance = "Deviance"
+  )
+```
+
+It can be clearly seen that the trimmed model works better, with higher R^2 and much lower deviance.
+
+From the that model, we can extract various parameters of our interest about the current siuation: the growth rate is 0.25 (95% Confidence Interval 0.21 - 0.28), which is equivalent to a doubling time of 2.76 days (95% Confidence 2.44 - 3.18 days). This is seriously alarming, as the speed of increase is extremely high, while the medical system in France is already overwhelming at this moment.
+
+We can also project how many cases might be expected in the 10 days, assuming that there would be no shock to the public health system control, and the testing system functions normally. One thing worths mentioning is that our model is fitted to predict only a few days ahead, knowing that during this time interval, the pandemic has not reached its peak. First, we’ll plot our predictions on a log scale graph.
+
+```{r, warning=FALSE}
+start_date <- ymd("2020-02-26")
+inc_growth_mod <- trimmed_France_incidence_fit$model
+
+#summary(inc_growth_mod)
+
+preds <- exp(predict(inc_growth_mod, newdata=data.frame(dates.x=1:35), type="response"))
+
+pred_growth_incidence <- tibble(dates = start_date + 0:34,
+                                incident_cases = as.integer(preds),
+                                data_type="predicted")
+
+obs_pred_France_growth <- pred_growth_incidence %>%
+  bind_rows(tibble(dates=get_dates(cases_obj),
+                   incident_cases=get_counts(cases_obj),
+                   data_type="observed")) 
+
+obs_pred_France_growth %>%
+  ggplot(aes(x=dates, y=incident_cases, colour=data_type)) +
+  geom_point() +
+  geom_line() +
+  scale_y_log10(labels = scales::comma) +
+  labs(title = "Daily incident French COVID-19 cases in log scale \n (observed vs predicted)", x="Date", y= "Logarithm of daily incident cases") +
+  theme(legend.position="top", legend.title = element_blank())
+```
+
+On the linear scale, the prediction looks like:
+
+```{r}
+obs_pred_France_growth %>%
+  ggplot(aes(x=dates, y=incident_cases, colour=data_type)) +
+    geom_point() +
+    geom_line() +
+    scale_y_continuous(labels = scales::comma) +
+    labs(title = "Daily incident French COVID-19 cases in linear scale \n (observed vs predicted)", x="Date", y= "Daily incident cases") +
+    theme(legend.position="top", legend.title = element_blank())
+```
+
+## Analysis of the pandemic at regional level {-}
+
+Up until now, all 20/20 regions of France, both within the metropolitane (13 regions) and overseas (7 regions). They are:
+
+  - French Metropolitane: 13 regions
+    * Auvergne-Rhône-Alpes 
+    * Bourgogne-Franche-Comté
+    * Bretagne
+    * Métropole												
+    * Centre-Val de Loire	
+    * Corse	
+    * Grand Est	
+    * Hauts-de-France	
+    * Ile-de-France	
+    * Normandie	
+    * Nouvelle-Aquitaine 	
+    * Occitanie	
+    * Pays de la Loire	
+    * Provence-Alpes-Côte d’Azur
+  - Overseas (Outre mer / DOM TOM): 7 regions
+    * Guadelope
+    * Guyane 
+    * Martinique 
+    * Mayotte
+    * La Réunion 
+    * Saint - Martin
+    * Saint - Barthélemy
+    
+However, as the number of cases of French overseas regions are neglectable comparing to the number of cases within French metropolitane, and the incident cases are so few for any analysis, at this point, to be meaningful. As a result, we will only be considering only 13 metropolitane regions, as follows.
+
+```{r plots_region, message = FALSE, echo=FALSE, tidy=TRUE, eval = TRUE}
+epicurve_region <- function(region) {
+  cases_by_region %>%
+    filter(Region == region) %>%
+    group_by(Date) %>%
+    summarise(`Incident cases` = sum(`Incident cases`, na.rm=TRUE)) %>%
+    filter(Date < current_date) %>%
+    ggplot(aes(x = Date, y = `Incident cases`)) +
+    geom_bar(stat="identity") +
+    labs(y="Incident cases", 
+         title=paste("COVID-19 incident cases in", region)) +
+    theme(legend.position="top")
+}
+
+regional_earlyR <- function(df, region, last_date, si_mean, si_sd) {
+  df %>%
+    filter(Date <= last_date,
+           !is.na(`Incident cases`),
+           Region == region) %>%
+    ungroup() %>%
+    select(Date, `Incident cases`) %>%
+    uncount(`Incident cases`) %>%
+    pull(Date) -> case_dates
+  case_dates %>%
+    incidence(., last_date = last_date) -> incident_cases
+  
+  res <- get_R(incident_cases, si_mean = si_mean, si_sd = si_sd)
+  res$case_dates <- case_dates
+  res$region <- region
+  res$last_date <- last_date
+  res$si_mean <- si_mean
+  res$si_sd <- si_sd
+  return(res)
+}
+regional_plot_R <- function(res) {
+  plot(res, "R", main=paste("COVID-19 estimated R for", 
+                            res$region,
+                            "using data up to",
+                            format(res$last_date, "%d %b %Y")),
+       sub=paste("(assuming serial interval mean =",
+                 res$si_mean, 
+                 ", sd =", 
+                 res$si_sd,")"),
+       bty="n")
+}
+regional_plot_lambda <- function(res) {
+  plot(res, "lambdas", scale = length(res$case_dates) + 1,
+       bty="n")
+  title(sub=paste("\nEstimated", expression(lambda), "for", 
+                  res$city, 
+                  "(assuming serial interval mean =",
+                  res$si_mean, 
+                  ", sd =", 
+                  res$si_sd, ")"))
+  abline(v = res$case_dates, lwd = 3, col = "grey")
+  abline(v = res$last_date, col = "blue", lty = 2, lwd = 2)
+  points(res$case_dates, seq_along(res$case_dates), pch = 20, cex = 3)
+}
+lambda_plot_region <- function(region) {
+  res_obj <- regional_earlyR(cases_by_region, 
+                                region, 
+                                max(cases_by_region[['Date']]),
+                                si_mean,
+                                si_sd)
+  regional_plot_lambda(res_obj)
+}
+
+plot_R_region <- function(region, region_start_date) {
+  
+  confirmed_cases_by_region <- cases_by_region %>%
+    filter(Date >= region_start_date) %>% 
+    filter(Region == region) %>%
+    filter(!is.na(`Incident cases`)) %>%
+    ungroup() %>%
+    select(Date, `Incident cases`) %>%
+    rename(dates = Date,
+           I= `Incident cases`)
+  
+  estimate_R_obj <- estimate_R(confirmed_cases_by_region,
+                               method="uncertain_si",
+                               config = make_config(list(
+                                 mean_si = 7.5, std_mean_si = 2.0,
+                                 min_mean_si = 1, max_mean_si = 8.4,
+                                 std_si = 3.4, std_std_si = 1.0,
+                                 min_std_si = 0.5, max_std_si = 4.0,
+                                 n1 = 1000, n2 = 1000)))
+  
+  plot(estimate_R_obj, "R") + labs(title=paste("Instantaneous effective reproduction number (R) \n", region))
+}
+```
+
+### Auvergne-Rhône-Alpes {-}
+
+```{r}
+ARA <- "Auvergne-Rhône-Alpes"
+ARA_start_date <- ymd("2020-02-25")
+```
+
+```{r}
+epicurve_region(ARA)
+```
+
+```{r, warning=FALSE}
+lambda_plot_region(ARA)
+```
+
+```{r, warning=FALSE}
+plot_R_region(ARA, ARA_start_date)
+```
+
+**Assessment:** The outbreak appears to be under control at this moment, with the overall trend of R decreasing and approaching 1.
+
+### Bourgogne-Franche-Comté {-}
+
+```{r}
+BFC <- "Bourgogne-Franche-Comté"
+BFC_start_date <- ymd("2020-02-27")
+```
+
+```{r}
+epicurve_region(BFC)
+```
+
+```{r, warning=FALSE}
+lambda_plot_region(BFC)
+```
+
+```{r, warning=FALSE}
+plot_R_region(BFC, BFC_start_date)
+```
+
+**Assessment:** After the orignial days with high values, the effective reproduction number has been brought back to around 1. However, this is still not an overall descending trend, meaning that the values at the final days are still fluctuating wildly.  
+
+### Bretagne {-}
+
+```{r, warning=FALSE}
+Bretagne_start_date <- ymd("2020-03-02")
+```
+
+```{r, warning=FALSE}
+epicurve_region("Bretagne")
+```
+
+```{r, warning=FALSE}
+lambda_plot_region("Bretagne")
+```
+
+```{r, warning=FALSE}
+plot_R_region("Bretagne", Bretagne_start_date)
+```
+
+**Assessment:** The situation now seems to be under control with the overall trend of the effective reproduction number dropping rapidly, nearly approaching 1. 
+
+### Centre-Val de Loire {-}
+
+```{r}
+CVdL <- "Centre-Val de Loire"
+CVdL_start_date <- ymd("2020-03-05")
+```
+
+```{r, warning=FALSE}
+epicurve_region(CVdL)
+```
+
+```{r, warning=FALSE}
+lambda_plot_region(ARA)
+```
+
+```{r, warning=FALSE}
+plot_R_region(ARA, ARA_start_date)
+```
+
+```{r}
+Corse_start_date <- ymd("2020-03-07")
+```
+
+```{r, warning=FALSE}
+epicurve_region("Corse")
+```
+
+```{r, warning=FALSE}
+lambda_plot_region("Corse")
+```
+
+```{r, warning=FALSE}
+plot_R_region("Corse", Corse_start_date)
+```
+
+**Assessment:** The time interval is too short to make any firm conclusions from the analysis; however, the pandemic is controlling well and the values of R keep decresaing, appoaching very near to 1.
+
+```{r}
+GE <- "Grand Est"
+GE_start_date <- ymd("2020-02-26")
+```
+
+```{r, warning=FALSE}
+epicurve_region(GE)
+```
+
+```{r, warning=FALSE}
+lambda_plot_region(GE)
+```
+
+```{r, warning=FALSE}
+plot_R_region(GE, GE_start_date)
+```
+
+
+**Grand Est:** Grand Est starts off with a terrible situation. The effective reproduction is extremely high. Up until March 9th, the values are still around 10. However, within the recent days, the pandemic seems to be under control. The battle is not yet to be won, but at least the region itself is doing a great job.
+
+### Hauts de France {-}
+
+```{r}
+HdF <- "Hauts-de-France"
+HdF_start_date <- ymd("2020-02-26")
+```
+
+```{r, warning=FALSE}
+epicurve_region(HdF)
+```
+
+```{r, warning=FALSE}
+lambda_plot_region(HdF)
+```
+
+```{r, warning=FALSE}
+plot_R_region(HdF, HdF_start_date)
+```
+
+**Assessment:** Although the overall trend is decreasing, we can easily see some fluctuations between the days. This means that, although the situation seems under control, there are potential risks that can ruin the efforts at any time. 
+
+### Ile-de-France {-}
+
+```{r}
+IdF <- "Ile-de-France"
+IdF_start_date <- ymd("2020-03-04")
+```
+
+```{r, warning=FALSE}
+epicurve_region(IdF)
+```
+
+```{r, warning=FALSE}
+lambda_plot_region(IdF)
+```
+
+```{r, warning=FALSE}
+plot_R_region(IdF, IdF_start_date)
+```
+
+**Assessment:** Ile-de-France is now the most heavily infected region within the whole country. Just like Grand Est, the region starts of with a very high value of R. However, although the overall trend is decreasing, we can see that there are still fluctuations, and the final effective reproduction number of yesterday is nowhere near 1. This means that the region has a lot to do to control this pandemic.
+
+### Normandie {-}
+
+```{r}
+Normandie_start_date <- ymd("2020-03-02")
+```
+
+```{r, warning=FALSE}
+epicurve_region("Normandie")
+```
+
+```{r, warning=FALSE}
+lambda_plot_region("Normandie")
+```
+
+```{r, warning=FALSE}
+plot_R_region("Normandie", Normandie_start_date)
+```
+
+**Assessments:** Just like most of the other regions, Normandie is doing its job well. Although starting of with a high value of R, a strong overall descending trend and the values approaching 1 is promising enough for a near future possibility of controlling the outbreak well.
+
+### Nouvelle-Aquitaine {-}
+
+```{r}
+NAq <- "Nouvelle-Aquitaine"
+NAq_start_date <- ymd("2020-02-28")
+```
+
+```{r, warning=FALSE}
+epicurve_region(NAq)
+```
+
+```{r, warning=FALSE}
+lambda_plot_region(NAq)
+```
+
+```{r, warning=FALSE}
+plot_R_region(NAq, NAq_start_date)
+```
+
+**Assessment:** This is a typical "two-wave pattern", with the last day witnessing an upward trend. Although the overall trend is decreasing, there is no certainty in predicting the upcoming days of this region.
+
+### Occitanie {-}
+
+```{r}
+Occitanie_start_date <- ymd("2020-02-27")
+```
+
+```{r, warning=FALSE}
+epicurve_region("Occitanie")
+```
+
+```{r, warning=FALSE}
+lambda_plot_region("Occitanie")
+```
+
+```{r, warning=FALSE}
+plot_R_region("Occitanie", Occitanie_start_date)
+```
+
+**Assessment:** The overall trend of R is decreasing. Specifically, there are two peaks out of this trend, one of which may be explained by the registration of data. The final value of R at around 2.5 is still not good enough to confirm that the region has controlled the pandemic well.
+
+### Pays de la Loire {-}
+
+```{r, warning=FALSE}
+PdlL <- "Pays de la Loire"
+PdlL_start_date <- ymd("2020-02-27")
+```
+
+```{r, warning=FALSE}
+epicurve_region(PdlL)
+```
+
+```{r, warning=FALSE}
+lambda_plot_region(PdlL)
+```
+
+```{r, warning=FALSE}
+plot_R_region(PdlL, PdlL_start_date)
+```
+
+**Assessment:** This is the most unstable graph of the value of R of all metropolitane regions in France. There is no certain trend, and the values keep fluctuating up and down, making any analysis or prediction difficult at this moment.
+
+### Provence-Alpes-Côte d’Azur {-}
+
+```{r}
+PACA <- "Provence-Alpes-Côte d’Azur"
+PACA_start_date <- ymd("2020-02-28")
+```
+
+```{r, warning=FALSE}
+epicurve_region(PACA)
+```
+
+```{r, warning=FALSE}
+lambda_plot_region(PACA)
+```
+
+```{r, warning=FALSE}
+plot_R_region(PACA, PACA_start_date)
+```
+
+**Assessment:** Once again, the overall trend is decreasing, which means that efforts to control the outbreak is proving effective. However, with a high value of R at around 3.0 at this moment, there is still a long way to fully control the situation.
+
+## Conclusion {-}
+
+With all the analysis that we have done previously, it seems clearly that France has been doing anything it can to make this pandemic under control. 
+
+Most specialists in the field believe that France is the second version of Italy in this pandemic, with the delay of 7-9 days. However, personally speaking, I do not believe that the same outcome will happen to France. With early, strong and strict measures, along with a world class medical system, France will have their own way in controlling this outbreak as fast and as effective as possible. 
+
+## References {-}
